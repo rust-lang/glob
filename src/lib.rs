@@ -67,6 +67,7 @@ use std::cmp;
 use std::error::Error;
 use std::fmt;
 use std::fs;
+use std::hash;
 use std::io;
 use std::path::{self, Component, Path, PathBuf};
 use std::str::FromStr;
@@ -480,11 +481,17 @@ impl fmt::Display for PatternError {
 ///   `]` and NOT `]` can be matched by `[]]` and `[!]]` respectively.  The `-`
 ///   character can be specified inside a character sequence pattern by placing
 ///   it at the start or the end, e.g. `[abc-]`.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Default, Debug)]
 pub struct Pattern {
     original: String,
     tokens: Vec<PatternToken>,
     is_recursive: bool,
+}
+
+impl hash::Hash for Pattern {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.original.hash(state);
+    }
 }
 
 /// Show the original glob pattern.
