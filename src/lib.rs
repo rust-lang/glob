@@ -574,7 +574,6 @@ impl Pattern {
                         let is_valid = if i == 2 || path::is_separator(chars[i - count - 1]) {
                             // it ends in a '/'
                             if i < chars.len() && path::is_separator(chars[i]) {
-                                i += 1;
                                 true
                             // or the pattern ends here
                             // this enables the existing globbing mechanism
@@ -763,6 +762,11 @@ impl Pattern {
                             m => return m,
                         }
                     }
+                }
+                Char(c) if path::is_separator(c) && follows_separator => {
+                    // when the separator symbol is used up 
+                    // by AnySequence or AnyRecursiveSequence
+                    continue; 
                 }
                 _ => {
                     let c = match file.next() {
@@ -1137,6 +1141,17 @@ mod test {
         assert!(pat.matches(""));
         assert!(pat.matches(".asdf"));
         assert!(pat.matches("/x/.asdf"));
+        
+        // a **/ should only match folders
+        let pat = Pattern::new("**/").unwrap();
+        println!("{:?}", pat);
+        assert!(pat.is_recursive);
+        assert!(pat.matches("abcde/"));
+        assert!(pat.matches("abcde/fgh/"));
+        assert!(!pat.matches("abcde/fgh/ijlk"));
+        //assert!(!pat.matches("")); // this test does not pass, should it?
+        assert!(!pat.matches(".asdf"));
+        assert!(!pat.matches("/x/.asdf"));
 
         // collapse consecutive wildcards
         let pat = Pattern::new("some/**/**/needle.txt").unwrap();
