@@ -1,7 +1,7 @@
 jobs:
 
 # linux-x64 build
-- job: LinuxBuild
+- job: Linux (rustc 1.23.0)
   pool:
     vmImage: 'ubuntu-16.04'
   steps:
@@ -12,8 +12,20 @@ jobs:
 
   - script: cargo test
 
+# osx-x64 build
+- job: OSX (rustc 1.23.0)
+  pool:
+    vmImage: 'macOS-10.13'
+  steps:
+  - script: |
+      curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.23.0
+      echo "##vso[task.setvariable variable=PATH;]$PATH:$HOME/.cargo/bin"
+  - script: rustup default 1.23.0
+
+  - script: cargo test
+
 # win-x64 build
-- job: WindowsBuild
+- job: Windows (rustc 1.23.0)
   pool:
     vmImage: 'vs2017-win2016'
   variables:
