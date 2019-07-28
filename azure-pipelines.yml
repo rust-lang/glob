@@ -1,19 +1,29 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
+jobs:
 
-trigger:
-- master
+# linux-x64 build
+- job: LinuxBuild
+  pool:
+    vmImage: 'ubuntu-16.04'
+  steps:
+  - script: |
+      curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.23.0
+      echo "##vso[task.setvariable variable=PATH;]$PATH:$HOME/.cargo/bin"
+  - script: rustup default 1.23.0
 
-pool:
-  vmImage: 'ubuntu-latest'
+  - script: cargo test
 
-steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
+# win-x64 build
+- job: WindowsBuild
+  pool:
+    vmImage: 'vs2017-win2016'
+  variables:
+    rustflags: '-C target-feature=+crt-static'
+  steps:
+  - script: |
+      curl -sSf -o rustup-init.exe https://win.rustup.rs
+      rustup-init.exe -y --default-toolchain 1.23.0
+  - script: rustup default 1.23.0
 
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+  - powershell: |
+      $env:PATH = "$env:PATH;$env:USERPROFILE\.cargo\bin"
+      cargo test
