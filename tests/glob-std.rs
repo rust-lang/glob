@@ -13,13 +13,12 @@
 #![cfg_attr(test, deny(warnings))]
 
 extern crate glob;
-extern crate tempdir;
+extern crate tempfile;
 
 use glob::glob;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use tempdir::TempDir;
 
 #[test]
 fn main() {
@@ -35,7 +34,7 @@ fn main() {
         glob(pattern).unwrap().map(|r| r.unwrap()).collect()
     }
 
-    let root = TempDir::new("glob-tests");
+    let root = tempfile::Builder::new().prefix("glob-tests").tempdir();
     let root = root.ok().expect("Should have created a temp directory");
     assert!(env::set_current_dir(root.path()).is_ok());
 
