@@ -47,6 +47,7 @@
 //!     case_sensitive: false,
 //!     require_literal_separator: false,
 //!     require_literal_leading_dot: false,
+//!     follow_links: false,
 //! };
 //! for entry in glob_with("local/*a*", options).unwrap() {
 //!     if let Ok(path) = entry {
@@ -323,8 +324,13 @@ impl fmt::Display for GlobError {
     }
 }
 
-fn is_dir(p: &Path) -> bool {
-    fs::metadata(p).map(|m| m.is_dir()).unwrap_or(false)
+fn is_dir(p: &Path, follow_links: bool) -> bool {
+    let metadata = if follow_links {
+        fs::metadata(p)
+    } else {
+        fs::symlink_metadata(p)
+    };
+    metadata.map(|m| m.is_dir()).unwrap_or(false)
 }
 
 /// An alias for a glob iteration result.
@@ -363,7 +369,8 @@ impl Iterator for Paths {
             // idx -1: was already checked by fill_todo, maybe path was '.' or
             // '..' that we can't match here because of normalization.
             if idx == !0 as usize {
-                if self.require_dir && !is_dir(&path) {
+                if self.require_dir && !is_dir(&path,
+                                               self.options.follow_links) {
                     continue;
                 }
                 return Some(Ok(path));
@@ -379,7 +386,7 @@ impl Iterator for Paths {
                     next += 1;
                 }
 
-                if is_dir(&path) {
+                if is_dir(&path, self.options.follow_links) {
                     // the path is a directory, so it's a match
 
                     // push this directory's contents
@@ -427,7 +434,8 @@ impl Iterator for Paths {
                     // *AND* its children so we don't need to check the
                     // children
 
-                    if !self.require_dir || is_dir(&path) {
+                    if !self.require_dir || is_dir(&path,
+                                                   self.options.follow_links) {
                         return Some(Ok(path));
                     }
                 } else {
@@ -848,7 +856,7 @@ fn fill_todo(
     };
 
     let pattern = &patterns[idx];
-    let is_dir = is_dir(path);
+    let is_dir = is_dir(path, options.follow_links);
     let curdir = path == Path::new(".");
     match pattern_as_str(pattern) {
         Some(s) => {
@@ -1004,6 +1012,10 @@ pub struct MatchOptions {
     /// conventionally considered hidden on Unix systems and it might be
     /// desirable to skip them when listing files.
     pub require_literal_leading_dot: bool,
+
+    /// Whether ot not paths that are symbolic links are followed
+    /// during the walk.
+    pub follow_links: bool,
 }
 
 impl MatchOptions {
@@ -1017,7 +1029,8 @@ impl MatchOptions {
     /// MatchOptions {
     ///     case_sensitive: true,
     ///     require_literal_separator: false,
-    ///     require_literal_leading_dot: false
+    ///     require_literal_leading_dot: false,
+    ///     follow_links: false,
     /// }
     /// ```
     ///
@@ -1030,6 +1043,7 @@ impl MatchOptions {
             case_sensitive: true,
             require_literal_separator: false,
             require_literal_leading_dot: false,
+            follow_links: false,
         }
     }
 }
@@ -1285,6 +1299,7 @@ mod test {
             case_sensitive: false,
             require_literal_separator: false,
             require_literal_leading_dot: false,
+            follow_links: false,
         };
 
         assert!(pat.matches_with("aBcDeFg", options));
@@ -1302,11 +1317,13 @@ mod test {
             case_sensitive: false,
             require_literal_separator: false,
             require_literal_leading_dot: false,
+            follow_links: false,
         };
         let options_case_sensitive = MatchOptions {
             case_sensitive: true,
             require_literal_separator: false,
             require_literal_leading_dot: false,
+            follow_links: false,
         };
 
         assert!(pat_within.matches_with("a", options_case_insensitive));
@@ -1324,11 +1341,13 @@ mod test {
             case_sensitive: true,
             require_literal_separator: true,
             require_literal_leading_dot: false,
+            follow_links: false,
         };
         let options_not_require_literal = MatchOptions {
             case_sensitive: true,
             require_literal_separator: false,
             require_literal_leading_dot: false,
+            follow_links: false,
         };
 
         assert!(Pattern::new("abc/def")
@@ -1364,11 +1383,13 @@ mod test {
             case_sensitive: true,
             require_literal_separator: false,
             require_literal_leading_dot: true,
+            follow_links: false,
         };
         let options_not_require_literal_leading_dot = MatchOptions {
             case_sensitive: true,
             require_literal_separator: false,
             require_literal_leading_dot: false,
+            follow_links: false,
         };
 
         let f = |options| {
