@@ -837,8 +837,8 @@ impl Pattern {
                             false
                         }
                         AnyChar => true,
-                        AnyWithin(ref specifiers) => in_char_specifiers(&specifiers, c, options),
-                        AnyExcept(ref specifiers) => !in_char_specifiers(&specifiers, c, options),
+                        AnyWithin(ref specifiers) => in_char_specifiers(specifiers, c, options),
+                        AnyExcept(ref specifiers) => !in_char_specifiers(specifiers, c, options),
                         Char(c2) => chars_eq(c, c2, options.case_sensitive),
                         AnySequence | AnyRecursiveSequence => unreachable!(),
                     } {
