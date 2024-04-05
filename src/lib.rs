@@ -72,8 +72,7 @@ doctest!("../README.md");
 use std::cmp;
 use std::error::Error;
 use std::fmt;
-use std::fs;
-use std::fs::DirEntry;
+use std::fs::{self, DirEntry};
 use std::io;
 use std::ops::Deref;
 use std::path::{self, Component, Path, PathBuf};
@@ -83,6 +82,126 @@ use CharSpecifier::{CharRange, SingleChar};
 use MatchResult::{EntirePatternDoesntMatch, Match, SubPatternDoesntMatch};
 use PatternToken::AnyExcept;
 use PatternToken::{AnyChar, AnyRecursiveSequence, AnySequence, AnyWithin, Char};
+
+/// The structure being returned from read_dir
+#[derive(Debug)]
+pub struct FsPathEntry {
+    /// The path of the file
+    pub path: PathBuf,
+    /// Tests whether this file type represents a directory
+    pub is_directory: bool,
+}
+
+impl FsPathEntry {
+    fn from_path<T: GlobFs>(path: PathBuf, fs: &T) -> Self {
+        let is_directory = fs.is_dir(&path).unwrap_or(false);
+        Self { path, is_directory }
+    }
+
+    fn into_path(self) -> PathBuf {
+        self.path
+    }
+}
+
+impl Deref for FsPathEntry {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        self.path.deref()
+    }
+}
+
+impl AsRef<Path> for FsPathEntry {
+    fn as_ref(&self) -> &Path {
+        self.path.as_ref()
+    }
+}
+
+/// The GlobFs trait is designed for file system operations, abstracting directory reading and type
+/// checking.
+pub trait GlobFs {
+    /// read_dir returns an object that implements an Iterator
+    /// The iterator yields a FsPathEntry for each entry in the directory.
+    /// The bool indicates if the entry is a directory.
+    fn read_dir(
+        &self,
+        path: PathBuf,
+    ) -> Result<Box<dyn Iterator<Item = Result<FsPathEntry, io::Error>>>, io::Error>;
+
+    /// is_dir takes a PathBuf and returns a bool indicating if it's a directory.
+    fn is_dir(&self, path: &Path) -> Result<bool, io::Error>;
+
+    /// Check if the file path exists
+    fn exists(&self, path: &Path) -> bool;
+}
+
+/// Implement GlobFs for &T
+impl<T: GlobFs + ?Sized> GlobFs for &T {
+    fn read_dir(
+        &self,
+        path: PathBuf,
+    ) -> Result<Box<dyn Iterator<Item = Result<FsPathEntry, io::Error>>>, io::Error> {
+        (*self).read_dir(path)
+    }
+
+    fn is_dir(&self, path: &Path) -> Result<bool, io::Error> {
+        (*self).is_dir(path)
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        (*self).exists(path)
+    }
+}
+
+/// Use the std fs and traverse the current system file system
+pub struct SystemFs;
+
+impl SystemFs {
+    fn dir_entry_is_dir(path: &Path, dir_entry: DirEntry) -> Option<bool> {
+        dir_entry
+            .file_type()
+            .ok()
+            .and_then(|file_type| {
+                // We need to use fs::metadata to resolve the actual path
+                // if it's a symlink.
+                if file_type.is_symlink() {
+                    None
+                } else {
+                    Some(file_type.is_dir())
+                }
+            })
+            .or_else(|| Self::check_path_is_dir(path).ok())
+    }
+
+    fn check_path_is_dir(path: &Path) -> Result<bool, io::Error> {
+        fs::metadata(path).map(|m| m.is_dir())
+    }
+}
+
+impl GlobFs for SystemFs {
+    fn read_dir(
+        &self,
+        path: PathBuf,
+    ) -> Result<Box<dyn Iterator<Item = Result<FsPathEntry, io::Error>>>, io::Error> {
+        let read_dir = fs::read_dir(path)?;
+
+        Ok(Box::new(read_dir.map(move |entry| {
+            entry.map(|e| {
+                let path = e.path();
+                let is_directory = Self::dir_entry_is_dir(&path, e).unwrap_or(false);
+                FsPathEntry { path, is_directory }
+            })
+        })))
+    }
+
+    fn is_dir(&self, path: &Path) -> Result<bool, io::Error> {
+        Self::check_path_is_dir(path)
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        fs::metadata(path).is_ok() || fs::symlink_metadata(path).is_ok()
+    }
+}
 
 /// An iterator that yields `Path`s from the filesystem that match a particular
 /// pattern.
@@ -94,12 +213,13 @@ use PatternToken::{AnyChar, AnyRecursiveSequence, AnySequence, AnyWithin, Char};
 ///
 /// See the `glob` function for more details.
 #[derive(Debug)]
-pub struct Paths {
+pub struct Paths<T> {
     dir_patterns: Vec<Pattern>,
     require_dir: bool,
     options: MatchOptions,
-    todo: Vec<Result<(PathWrapper, usize), GlobError>>,
-    scope: Option<PathWrapper>,
+    todo: Vec<Result<(FsPathEntry, usize), GlobError>>,
+    scope: Option<FsPathEntry>,
+    fs: T,
 }
 
 /// Return an iterator that produces all the `Path`s that match the given
@@ -159,7 +279,7 @@ pub struct Paths {
 /// }
 /// ```
 /// Paths are yielded in alphabetical order.
-pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
+pub fn glob(pattern: &str) -> Result<Paths<SystemFs>, PatternError> {
     glob_with(pattern, MatchOptions::new())
 }
 
@@ -176,7 +296,29 @@ pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
 /// passed to this function.
 ///
 /// Paths are yielded in alphabetical order.
-pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternError> {
+pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths<SystemFs>, PatternError> {
+    glob_fs_with(pattern, options, SystemFs)
+}
+
+/// Return an iterator that produces all the `Path`s that match the given
+/// pattern using the specified match options, which may be absolute or relative
+/// to the current working directory.
+///
+/// This may return an error if the pattern is invalid.
+///
+/// The pattern matching operation is performed on a file system abstraction provided by
+/// an object implementing the `GlobFs` trait. This allows pattern matching to be extended
+/// beyond the physical file system to any virtual file system, such as the contents of `tar`
+/// archives or a custom in-memory file system.
+///
+/// This approach is particularly beneficial when working with non-standard file systems,
+/// enabling pattern matching operations that are decoupled from the physical file system
+/// and tailored to specific needs.
+pub fn glob_fs_with<T: GlobFs>(
+    pattern: &str,
+    options: MatchOptions,
+    fs: T,
+) -> Result<Paths<T>, PatternError> {
     #[cfg(windows)]
     fn check_windows_verbatim(p: &Path) -> bool {
         match p.components().next() {
@@ -240,11 +382,12 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
             options,
             todo: Vec::new(),
             scope: None,
+            fs,
         });
     }
 
     let scope = root.map_or_else(|| PathBuf::from("."), to_scope);
-    let scope = PathWrapper::from_path(scope);
+    let scope = FsPathEntry::from_path(scope, &fs);
 
     let mut dir_patterns = Vec::new();
     let components =
@@ -272,6 +415,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
         options,
         todo,
         scope: Some(scope),
+        fs,
     })
 }
 
@@ -326,61 +470,13 @@ impl fmt::Display for GlobError {
     }
 }
 
-#[derive(Debug)]
-struct PathWrapper {
-    path: PathBuf,
-    is_directory: bool,
-}
-
-impl PathWrapper {
-    fn from_dir_entry(path: PathBuf, e: DirEntry) -> Self {
-        let is_directory = e
-            .file_type()
-            .ok()
-            .and_then(|file_type| {
-                // We need to use fs::metadata to resolve the actual path
-                // if it's a symlink.
-                if file_type.is_symlink() {
-                    None
-                } else {
-                    Some(file_type.is_dir())
-                }
-            })
-            .or_else(|| fs::metadata(&path).map(|m| m.is_dir()).ok())
-            .unwrap_or(false);
-        Self { path, is_directory }
-    }
-    fn from_path(path: PathBuf) -> Self {
-        let is_directory = fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
-        Self { path, is_directory }
-    }
-
-    fn into_path(self) -> PathBuf {
-        self.path
-    }
-}
-
-impl Deref for PathWrapper {
-    type Target = Path;
-
-    fn deref(&self) -> &Self::Target {
-        self.path.deref()
-    }
-}
-
-impl AsRef<Path> for PathWrapper {
-    fn as_ref(&self) -> &Path {
-        self.path.as_ref()
-    }
-}
-
 /// An alias for a glob iteration result.
 ///
 /// This represents either a matched path or a glob iteration error,
 /// such as failing to read a particular directory's contents.
 pub type GlobResult = Result<PathBuf, GlobError>;
 
-impl Iterator for Paths {
+impl<T: GlobFs> Iterator for Paths<T> {
     type Item = GlobResult;
 
     fn next(&mut self) -> Option<GlobResult> {
@@ -393,7 +489,14 @@ impl Iterator for Paths {
                 // Shouldn't happen, but we're using -1 as a special index.
                 assert!(self.dir_patterns.len() < !0 as usize);
 
-                fill_todo(&mut self.todo, &self.dir_patterns, 0, &scope, self.options);
+                fill_todo(
+                    &mut self.todo,
+                    &self.dir_patterns,
+                    0,
+                    &scope,
+                    self.options,
+                    &self.fs,
+                );
             }
         }
 
@@ -436,6 +539,7 @@ impl Iterator for Paths {
                         next,
                         &path,
                         self.options,
+                        &self.fs,
                     );
 
                     if next == self.dir_patterns.len() - 1 {
@@ -484,6 +588,7 @@ impl Iterator for Paths {
                         idx + 1,
                         &path,
                         self.options,
+                        &self.fs,
                     );
                 }
             }
@@ -867,12 +972,13 @@ impl Pattern {
 // Fills `todo` with paths under `path` to be matched by `patterns[idx]`,
 // special-casing patterns to match `.` and `..`, and avoiding `readdir()`
 // calls when there are no metacharacters in the pattern.
-fn fill_todo(
-    todo: &mut Vec<Result<(PathWrapper, usize), GlobError>>,
+fn fill_todo<T: GlobFs>(
+    todo: &mut Vec<Result<(FsPathEntry, usize), GlobError>>,
     patterns: &[Pattern],
     idx: usize,
-    path: &PathWrapper,
+    path: &FsPathEntry,
     options: MatchOptions,
+    fs: &T,
 ) {
     // convert a pattern that's just many Char(_) to a string
     fn pattern_as_str(pattern: &Pattern) -> Option<String> {
@@ -887,14 +993,14 @@ fn fill_todo(
         Some(s)
     }
 
-    let add = |todo: &mut Vec<_>, next_path: PathWrapper| {
+    let add = |todo: &mut Vec<_>, next_path: FsPathEntry| {
         if idx + 1 == patterns.len() {
             // We know it's good, so don't make the iterator match this path
             // against the pattern again. In particular, it can't match
             // . or .. globs since these never show up as path components.
             todo.push(Ok((next_path, !0 as usize)));
         } else {
-            fill_todo(todo, patterns, idx + 1, &next_path, options);
+            fill_todo(todo, patterns, idx + 1, &next_path, options, fs);
         }
     };
 
@@ -914,25 +1020,19 @@ fn fill_todo(
             } else {
                 path.join(&s)
             };
-            let next_path = PathWrapper::from_path(next_path);
-            if (special && is_dir)
-                || (!special
-                    && (fs::metadata(&next_path).is_ok()
-                        || fs::symlink_metadata(&next_path).is_ok()))
-            {
+            let next_path = FsPathEntry::from_path(next_path, fs);
+            if (special && is_dir) || (!special && fs.exists(&next_path)) {
                 add(todo, next_path);
             }
         }
         None if is_dir => {
-            let dirs = fs::read_dir(path).and_then(|d| {
+            let dirs = fs.read_dir(path.to_path_buf()).and_then(|d| {
                 d.map(|e| {
-                    e.map(|e| {
-                        let path = if curdir {
-                            PathBuf::from(e.path().file_name().unwrap())
-                        } else {
-                            e.path()
-                        };
-                        PathWrapper::from_dir_entry(path, e)
+                    e.map(|mut e| {
+                        if curdir {
+                            e.path = PathBuf::from(e.path.file_name().unwrap());
+                        }
+                        e
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()
@@ -954,7 +1054,7 @@ fn fill_todo(
                     if !pattern.tokens.is_empty() && pattern.tokens[0] == Char('.') {
                         for &special in &[".", ".."] {
                             if pattern.matches_with(special, options) {
-                                add(todo, PathWrapper::from_path(path.join(special)));
+                                add(todo, FsPathEntry::from_path(path.join(special), fs));
                             }
                         }
                     }
