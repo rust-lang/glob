@@ -199,7 +199,7 @@ impl GlobFs for SystemFs {
     }
 
     fn exists(&self, path: &Path) -> bool {
-        fs::metadata(path).is_ok() || fs::symlink_metadata(path).is_ok()
+        fs::symlink_metadata(path).is_ok()
     }
 }
 
