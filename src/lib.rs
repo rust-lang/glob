@@ -72,6 +72,7 @@ doctest!("../README.md");
 use std::cmp;
 use std::cmp::Ordering;
 use std::error::Error;
+use std::ffi::OsString;
 use std::fmt;
 use std::fs;
 use std::fs::DirEntry;
@@ -329,10 +330,11 @@ impl fmt::Display for GlobError {
 struct PathWrapper {
     path: PathBuf,
     is_directory: bool,
+    file_name: Option<OsString>,
 }
 
 impl PathWrapper {
-    fn from_dir_entry(path: PathBuf, e: DirEntry) -> Self {
+    fn from_dir_entry(path: PathBuf, file_name: OsString, e: DirEntry) -> Self {
         let is_directory = e
             .file_type()
             .ok()
@@ -347,11 +349,20 @@ impl PathWrapper {
             })
             .or_else(|| fs::metadata(&path).map(|m| m.is_dir()).ok())
             .unwrap_or(false);
-        Self { path, is_directory }
+        Self {
+            path,
+            is_directory,
+            file_name: Some(file_name),
+        }
     }
     fn from_path(path: PathBuf) -> Self {
         let is_directory = fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
-        Self { path, is_directory }
+        let file_name = path.file_name().map(ToOwned::to_owned);
+        Self {
+            path,
+            is_directory,
+            file_name,
+        }
     }
 
     fn into_path(self) -> PathBuf {
@@ -930,12 +941,16 @@ fn fill_todo(
             let dirs = fs::read_dir(path).and_then(|d| {
                 d.map(|e| {
                     e.map(|e| {
-                        let path = if curdir {
-                            PathBuf::from(e.path().file_name().unwrap())
+                        let (path, file_name) = if curdir {
+                            let path = e.path();
+                            let file_name = path.file_name().unwrap();
+                            (PathBuf::from(file_name), file_name.to_owned())
                         } else {
-                            e.path()
+                            let path = e.path();
+                            let file_name = path.file_name().unwrap().to_owned();
+                            (path, file_name)
                         };
-                        PathWrapper::from_dir_entry(path, e)
+                        PathWrapper::from_dir_entry(path, file_name, e)
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()
@@ -946,7 +961,7 @@ fn fill_todo(
                         children
                             .retain(|x| !x.file_name().unwrap().to_str().unwrap().starts_with('.'));
                     }
-                    children.sort_by(|p1, p2| p2.file_name().cmp(&p1.file_name()));
+                    children.sort_by(|p1, p2| p2.file_name.cmp(&p1.file_name));
                     todo.extend(children.into_iter().map(|x| Ok((x, idx))));
 
                     // Matching the special directory entries . and .. that
