@@ -334,7 +334,7 @@ struct PathWrapper {
 }
 
 impl PathWrapper {
-    fn from_dir_entry(path: PathBuf, file_name: OsString, e: DirEntry) -> Self {
+    fn from_dir_entry(path: PathBuf, file_name: Option<OsString>, e: DirEntry) -> Self {
         let is_directory = e
             .file_type()
             .ok()
@@ -352,7 +352,7 @@ impl PathWrapper {
         Self {
             path,
             is_directory,
-            file_name: Some(file_name),
+            file_name,
         }
     }
     fn from_path(path: PathBuf) -> Self {
@@ -944,10 +944,10 @@ fn fill_todo(
                         let (path, file_name) = if curdir {
                             let path = e.path();
                             let file_name = path.file_name().unwrap();
-                            (PathBuf::from(file_name), file_name.to_owned())
+                            (PathBuf::from(file_name), Some(file_name.to_owned()))
                         } else {
                             let path = e.path();
-                            let file_name = path.file_name().unwrap().to_owned();
+                            let file_name = path.file_name().map(ToOwned::to_owned);
                             (path, file_name)
                         };
                         PathWrapper::from_dir_entry(path, file_name, e)
