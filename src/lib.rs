@@ -259,6 +259,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
             original: "".to_string(),
             tokens: Vec::new(),
             is_recursive: false,
+            is_regular: true,
         });
     }
 
@@ -552,6 +553,7 @@ pub struct Pattern {
     original: String,
     tokens: Vec<PatternToken>,
     is_recursive: bool,
+    is_regular: bool,
 }
 
 /// Show the original glob pattern.
@@ -605,11 +607,13 @@ impl Pattern {
         let chars = pattern.chars().collect::<Vec<_>>();
         let mut tokens = Vec::new();
         let mut is_recursive = false;
+        let mut is_regular = true;
         let mut i = 0;
 
         while i < chars.len() {
             match chars[i] {
                 '?' => {
+                    is_regular = false;
                     tokens.push(AnyChar);
                     i += 1;
                 }
@@ -663,10 +667,12 @@ impl Pattern {
 
                             if !(tokens_len > 1 && tokens[tokens_len - 1] == AnyRecursiveSequence) {
                                 is_recursive = true;
+                                is_regular = false;
                                 tokens.push(AnyRecursiveSequence);
                             }
                         }
                     } else {
+                        is_regular = false;
                         tokens.push(AnySequence);
                     }
                 }
@@ -678,6 +684,7 @@ impl Pattern {
                                 let chars = &chars[i + 2..i + 3 + j];
                                 let cs = parse_char_specifiers(chars);
                                 tokens.push(AnyExcept(cs));
+                                is_regular = false;
                                 i += j + 4;
                                 continue;
                             }
@@ -688,6 +695,7 @@ impl Pattern {
                             Some(j) => {
                                 let cs = parse_char_specifiers(&chars[i + 1..i + 2 + j]);
                                 tokens.push(AnyWithin(cs));
+                                is_regular = false;
                                 i += j + 3;
                                 continue;
                             }
@@ -711,6 +719,7 @@ impl Pattern {
             tokens,
             original: pattern.to_string(),
             is_recursive,
+            is_regular,
         })
     }
 
@@ -874,19 +883,6 @@ fn fill_todo(
     path: &PathWrapper,
     options: MatchOptions,
 ) {
-    // convert a pattern that's just many Char(_) to a string
-    fn pattern_as_str(pattern: &Pattern) -> Option<String> {
-        let mut s = String::new();
-        for token in &pattern.tokens {
-            match *token {
-                Char(c) => s.push(c),
-                _ => return None,
-            }
-        }
-
-        Some(s)
-    }
-
     let add = |todo: &mut Vec<_>, next_path: PathWrapper| {
         if idx + 1 == patterns.len() {
             // We know it's good, so don't make the iterator match this path
@@ -901,75 +897,70 @@ fn fill_todo(
     let pattern = &patterns[idx];
     let is_dir = path.is_directory;
     let curdir = path.as_ref() == Path::new(".");
-    match pattern_as_str(pattern) {
-        Some(s) => {
-            // This pattern component doesn't have any metacharacters, so we
-            // don't need to read the current directory to know where to
-            // continue. So instead of passing control back to the iterator,
-            // we can just check for that one entry and potentially recurse
-            // right away.
-            let special = "." == s || ".." == s;
-            let next_path = if curdir {
-                PathBuf::from(s)
-            } else {
-                path.join(&s)
-            };
-            let next_path = PathWrapper::from_path(next_path);
-            if (special && is_dir)
-                || (!special
-                    && (fs::metadata(&next_path).is_ok()
-                        || fs::symlink_metadata(&next_path).is_ok()))
-            {
-                add(todo, next_path);
-            }
+    if pattern.is_regular {
+        let s = pattern.as_str();
+        // This pattern component doesn't have any metacharacters, so we
+        // don't need to read the current directory to know where to
+        // continue. So instead of passing control back to the iterator,
+        // we can just check for that one entry and potentially recurse
+        // right away.
+        let special = "." == s || ".." == s;
+        let next_path = if curdir {
+            PathBuf::from(s)
+        } else {
+            path.join(&s)
+        };
+        let next_path = PathWrapper::from_path(next_path);
+        if (special && is_dir)
+            || (!special
+                && (fs::metadata(&next_path).is_ok() || fs::symlink_metadata(&next_path).is_ok()))
+        {
+            add(todo, next_path);
         }
-        None if is_dir => {
-            let dirs = fs::read_dir(path).and_then(|d| {
-                d.map(|e| {
-                    e.map(|e| {
-                        let path = if curdir {
-                            PathBuf::from(e.path().file_name().unwrap())
-                        } else {
-                            e.path()
-                        };
-                        PathWrapper::from_dir_entry(path, e)
-                    })
+    } else if is_dir {
+        let dirs = fs::read_dir(path).and_then(|d| {
+            d.map(|e| {
+                e.map(|e| {
+                    let path = if curdir {
+                        PathBuf::from(e.path().file_name().unwrap())
+                    } else {
+                        e.path()
+                    };
+                    PathWrapper::from_dir_entry(path, e)
                 })
-                .collect::<Result<Vec<_>, _>>()
-            });
-            match dirs {
-                Ok(mut children) => {
-                    if options.require_literal_leading_dot {
-                        children
-                            .retain(|x| !x.file_name().unwrap().to_str().unwrap().starts_with("."));
-                    }
-                    children.sort_by(|p1, p2| p2.file_name().cmp(&p1.file_name()));
-                    todo.extend(children.into_iter().map(|x| Ok((x, idx))));
+            })
+            .collect::<Result<Vec<_>, _>>()
+        });
+        match dirs {
+            Ok(mut children) => {
+                if options.require_literal_leading_dot {
+                    children.retain(|x| !x.file_name().unwrap().to_str().unwrap().starts_with("."));
+                }
+                children.sort_by(|p1, p2| p2.file_name().cmp(&p1.file_name()));
+                todo.extend(children.into_iter().map(|x| Ok((x, idx))));
 
-                    // Matching the special directory entries . and .. that
-                    // refer to the current and parent directory respectively
-                    // requires that the pattern has a leading dot, even if the
-                    // `MatchOptions` field `require_literal_leading_dot` is not
-                    // set.
-                    if !pattern.tokens.is_empty() && pattern.tokens[0] == Char('.') {
-                        for &special in &[".", ".."] {
-                            if pattern.matches_with(special, options) {
-                                add(todo, PathWrapper::from_path(path.join(special)));
-                            }
+                // Matching the special directory entries . and .. that
+                // refer to the current and parent directory respectively
+                // requires that the pattern has a leading dot, even if the
+                // `MatchOptions` field `require_literal_leading_dot` is not
+                // set.
+                if !pattern.tokens.is_empty() && pattern.tokens[0] == Char('.') {
+                    for &special in &[".", ".."] {
+                        if pattern.matches_with(special, options) {
+                            add(todo, PathWrapper::from_path(path.join(special)));
                         }
                     }
                 }
-                Err(e) => {
-                    todo.push(Err(GlobError {
-                        path: path.to_path_buf(),
-                        error: e,
-                    }));
-                }
+            }
+            Err(e) => {
+                todo.push(Err(GlobError {
+                    path: path.to_path_buf(),
+                    error: e,
+                }));
             }
         }
-        None => {
-            // not a directory, nothing more to find
-        }
+    } else {
+        // not a directory, nothing more to find
     }
 }
 
