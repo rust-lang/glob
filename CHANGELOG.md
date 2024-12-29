@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.3](https://github.com/rust-lang/glob/compare/v0.3.2...v0.3.3) - 2024-12-29
+
+### Other
+
+- Run clippy checks in CI
+- Disallow warnings in CI
+- Apply remaining clippy suggestions
+- Fix an instance of `unused_must_use` on Windows
+- Remove useless references
+- Use char rather than &str as `starts_with()` argument
+- Remove useless `as usize`
+- Do not deconstruct an error to rebuild it right after
+- Check rustfmt in CI
+- Run `cargo fmt` on existing code
+
 ## [0.3.2](https://github.com/rust-lang/glob/compare/v0.3.1...v0.3.2) - 2024-12-28
 
 ## What's Changed
