@@ -72,7 +72,7 @@ doctest!("../README.md");
 use std::cmp;
 use std::cmp::Ordering;
 use std::error::Error;
-use std::ffi::OsString;
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::fs::DirEntry;
@@ -330,11 +330,11 @@ impl fmt::Display for GlobError {
 struct PathWrapper {
     path: PathBuf,
     is_directory: bool,
-    file_name: Option<OsString>,
+    file_name: Option<Box<OsStr>>,
 }
 
 impl PathWrapper {
-    fn from_dir_entry(path: PathBuf, file_name: Option<OsString>, e: DirEntry) -> Self {
+    fn from_dir_entry(path: PathBuf, file_name: Option<Box<OsStr>>, e: DirEntry) -> Self {
         let is_directory = e
             .file_type()
             .ok()
@@ -357,7 +357,7 @@ impl PathWrapper {
     }
     fn from_path(path: PathBuf) -> Self {
         let is_directory = fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
-        let file_name = path.file_name().map(ToOwned::to_owned);
+        let file_name = path.file_name().map(Box::from);
         Self {
             path,
             is_directory,
@@ -944,10 +944,10 @@ fn fill_todo(
                         let (path, file_name) = if curdir {
                             let path = e.path();
                             let file_name = path.file_name().unwrap();
-                            (PathBuf::from(file_name), Some(file_name.to_owned()))
+                            (PathBuf::from(file_name), Some(Box::from(file_name)))
                         } else {
                             let path = e.path();
-                            let file_name = path.file_name().map(ToOwned::to_owned);
+                            let file_name = path.file_name().map(Box::from);
                             (path, file_name)
                         };
                         PathWrapper::from_dir_entry(path, file_name, e)
