@@ -200,13 +200,13 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
     }
 
     #[cfg(windows)]
-    fn to_scope(p: &Path) -> PathBuf {
+    fn to_scope(p: &Path) -> Box<Path> {
         // FIXME handle volume relative paths here
-        p.to_path_buf()
+        p.into()
     }
     #[cfg(not(windows))]
-    fn to_scope(p: &Path) -> PathBuf {
-        p.to_path_buf()
+    fn to_scope(p: &Path) -> Box<Path> {
+        p.into()
     }
 
     // make sure that the pattern is valid first, else early return with error
@@ -243,7 +243,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
         });
     }
 
-    let scope = root.map_or_else(|| PathBuf::from("."), to_scope);
+    let scope = root.map_or_else(|| Path::new(".").into(), to_scope);
     let scope = PathWrapper::from_path(scope);
 
     let mut dir_patterns = Vec::new();
@@ -328,13 +328,13 @@ impl fmt::Display for GlobError {
 
 #[derive(Debug)]
 struct PathWrapper {
-    path: PathBuf,
+    path: Box<Path>,
     is_directory: bool,
     file_name: Option<Box<OsStr>>,
 }
 
 impl PathWrapper {
-    fn from_dir_entry(path: PathBuf, file_name: Option<Box<OsStr>>, e: DirEntry) -> Self {
+    fn from_dir_entry(path: Box<Path>, file_name: Option<Box<OsStr>>, e: DirEntry) -> Self {
         let is_directory = e
             .file_type()
             .ok()
@@ -355,7 +355,7 @@ impl PathWrapper {
             file_name,
         }
     }
-    fn from_path(path: PathBuf) -> Self {
+    fn from_path(path: Box<Path>) -> Self {
         let is_directory = fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
         let file_name = path.file_name().map(Box::from);
         Self {
@@ -366,7 +366,7 @@ impl PathWrapper {
     }
 
     fn into_path(self) -> PathBuf {
-        self.path
+        self.path.into_path_buf()
     }
 }
 
@@ -928,7 +928,7 @@ fn fill_todo(
             } else {
                 path.join(&s)
             };
-            let next_path = PathWrapper::from_path(next_path);
+            let next_path = PathWrapper::from_path(next_path.into_boxed_path());
             if (special && is_dir)
                 || (!special
                     && (fs::metadata(&next_path).is_ok()
@@ -944,9 +944,9 @@ fn fill_todo(
                         let (path, file_name) = if curdir {
                             let path = e.path();
                             let file_name = path.file_name().unwrap();
-                            (PathBuf::from(file_name), Some(Box::from(file_name)))
+                            (Box::from(file_name.as_ref()), Some(Box::from(file_name)))
                         } else {
-                            let path = e.path();
+                            let path = e.path().into_boxed_path();
                             let file_name = path.file_name().map(Box::from);
                             (path, file_name)
                         };
@@ -972,7 +972,10 @@ fn fill_todo(
                     if !pattern.tokens.is_empty() && pattern.tokens[0] == Char('.') {
                         for &special in &[".", ".."] {
                             if pattern.matches_with(special, options) {
-                                add(todo, PathWrapper::from_path(path.join(special)));
+                                add(
+                                    todo,
+                                    PathWrapper::from_path(path.join(special).into_boxed_path()),
+                                );
                             }
                         }
                     }
