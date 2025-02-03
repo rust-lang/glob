@@ -943,8 +943,13 @@ fn fill_todo(
             match dirs {
                 Ok(mut children) => {
                     if options.require_literal_leading_dot {
-                        children
-                            .retain(|x| !x.file_name().unwrap().to_str().unwrap().starts_with('.'));
+                        children.retain(|x| {
+                            !x.file_name()
+                                .unwrap()
+                                .to_str()
+                                // FIXME (#9639): This needs to handle non-utf8 paths
+                                .is_none_or(|s| s.starts_with('.'))
+                        });
                     }
                     children.sort_by(|p1, p2| p2.file_name().cmp(&p1.file_name()));
                     todo.extend(children.into_iter().map(|x| Ok((x, idx))));
