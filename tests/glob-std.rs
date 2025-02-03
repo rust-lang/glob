@@ -18,12 +18,15 @@ extern crate tempdir;
 use glob::{glob, glob_with};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tempdir::TempDir;
 
 #[test]
 fn main() {
-    fn mk_file(path: &str, directory: bool) {
+    fn mk_file<P>(path: P, directory: bool)
+    where
+        P: AsRef<Path>,
+    {
         if directory {
             fs::create_dir(path).unwrap();
         } else {
@@ -472,6 +475,25 @@ fn main() {
                 PathBuf::from("bbb/specials/["),
                 PathBuf::from("bbb/specials/]")
             )
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        // create a non-utf8 file
+        let non_utf8 = OsString::from_vec(b"i/qwe/.\xff\xff\xff\xff".into());
+        assert!(non_utf8.to_str().is_none());
+        mk_file(PathBuf::from(non_utf8), false);
+
+        // this tests a case where require_literal_leading_dot panicked.
+        assert_eq!(options.require_literal_leading_dot, true);
+        // ensure that we don't panic
+        assert_eq!(
+            glob_with_vec("i/qwe/nothing*", options),
+            Vec::<PathBuf>::new()
         );
     }
 }
