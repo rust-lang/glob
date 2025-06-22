@@ -619,7 +619,7 @@ impl Pattern {
                 }
                 _ => {}
             }
-            //#[cfg(windows)]
+            #[cfg(windows)]
             match (*first_char, second_char) {
                 ('~', None) | ('~', Some(&'/')) | ('~', Some(&'\\')) => {
                     if let Ok(home_dir) = std::env::var("USERPROFILE") {
