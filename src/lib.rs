@@ -609,7 +609,7 @@ impl Pattern {
         if let (Some(first_char), second_char) = (chars.first(), chars.get(1)) {
             #[cfg(not(windows))]
             match (*first_char, second_char) {
-                ('~', None) | ('~', Some('/')) => {
+                ('~', None) | ('~', Some(&'/')) => {
                     if let Ok(home_dir) = std::env::var("HOME") {
                         for ch in home_dir.chars() {
                             tokens.push(PatternToken::Char(ch));
@@ -619,9 +619,9 @@ impl Pattern {
                 }
                 _ => {}
             }
-            #[cfg(windows)]
+            //#[cfg(windows)]
             match (*first_char, second_char) {
-                ('~', None) | ('~', Some('/')) | ('~', Some('\\')) => {
+                ('~', None) | ('~', Some(&'/')) | ('~', Some(&'\\')) => {
                     if let Ok(home_dir) = std::env::var("USERPROFILE") {
                         for ch in home_dir.chars() {
                             tokens.push(PatternToken::Char(ch));
