@@ -540,6 +540,8 @@ impl fmt::Display for PatternError {
 /// - `[!...]` is the negation of `[...]`, i.e. it matches any characters
 ///   **not** in the brackets.
 ///
+/// - `[^...]` is identical to `[!...]`.
+///
 /// - The metacharacters `?`, `*`, `[`, `]` can be matched by using brackets
 ///   (e.g. `[?]`).  When a `]` occurs immediately following `[` or `[!` then it
 ///   is interpreted as being part of, rather then ending, the character set, so
@@ -674,7 +676,7 @@ impl Pattern {
                     }
                 }
                 '[' => {
-                    if i + 4 <= chars.len() && chars[i + 1] == '!' {
+                    if i + 4 <= chars.len() && (chars[i + 1] == '!' || chars[i + 1] == '^') {
                         match chars[i + 3..].iter().position(|x| *x == ']') {
                             None => (),
                             Some(j) => {
@@ -685,7 +687,8 @@ impl Pattern {
                                 continue;
                             }
                         }
-                    } else if i + 3 <= chars.len() && chars[i + 1] != '!' {
+                    } else if i + 3 <= chars.len() && !(chars[i + 1] == '!' || chars[i + 1] == '^')
+                    {
                         match chars[i + 2..].iter().position(|x| *x == ']') {
                             None => (),
                             Some(j) => {
@@ -1115,12 +1118,16 @@ mod test {
     fn test_unclosed_bracket_errors() {
         assert!(Pattern::new("abc[def").unwrap_err().pos == 3);
         assert!(Pattern::new("abc[!def").unwrap_err().pos == 3);
+        assert!(Pattern::new("abc[^def").unwrap_err().pos == 3);
         assert!(Pattern::new("abc[").unwrap_err().pos == 3);
         assert!(Pattern::new("abc[!").unwrap_err().pos == 3);
+        assert!(Pattern::new("abc[^").unwrap_err().pos == 3);
         assert!(Pattern::new("abc[d").unwrap_err().pos == 3);
         assert!(Pattern::new("abc[!d").unwrap_err().pos == 3);
+        assert!(Pattern::new("abc[^d").unwrap_err().pos == 3);
         assert!(Pattern::new("abc[]").unwrap_err().pos == 3);
         assert!(Pattern::new("abc[!]").unwrap_err().pos == 3);
+        assert!(Pattern::new("abc[^]").unwrap_err().pos == 3);
     }
 
     #[test]
@@ -1273,6 +1280,12 @@ mod test {
         }
         assert!(pat.matches("a_b"));
 
+        let pat = Pattern::new("a[^0-9]b").unwrap();
+        for i in 0..10 {
+            assert!(!pat.matches(&format!("a{}b", i)));
+        }
+        assert!(pat.matches("a_b"));
+
         let pats = ["[a-z123]", "[1a-z23]", "[123a-z]"];
         for &p in pats.iter() {
             let pat = Pattern::new(p).unwrap();
@@ -1307,6 +1320,7 @@ mod test {
 
         assert!(Pattern::new("[-]").unwrap().matches("-"));
         assert!(!Pattern::new("[!-]").unwrap().matches("-"));
+        assert!(!Pattern::new("[^-]").unwrap().matches("-"));
     }
 
     #[test]
@@ -1352,7 +1366,8 @@ mod test {
     #[test]
     fn test_pattern_matches_case_insensitive_range() {
         let pat_within = Pattern::new("[a]").unwrap();
-        let pat_except = Pattern::new("[!a]").unwrap();
+        let pat_except1 = Pattern::new("[!a]").unwrap();
+        let pat_except2 = Pattern::new("[^a]").unwrap();
 
         let options_case_insensitive = MatchOptions {
             case_sensitive: false,
@@ -1369,9 +1384,13 @@ mod test {
         assert!(pat_within.matches_with("A", options_case_insensitive));
         assert!(!pat_within.matches_with("A", options_case_sensitive));
 
-        assert!(!pat_except.matches_with("a", options_case_insensitive));
-        assert!(!pat_except.matches_with("A", options_case_insensitive));
-        assert!(pat_except.matches_with("A", options_case_sensitive));
+        assert!(!pat_except1.matches_with("a", options_case_insensitive));
+        assert!(!pat_except1.matches_with("A", options_case_insensitive));
+        assert!(pat_except1.matches_with("A", options_case_sensitive));
+
+        assert!(!pat_except2.matches_with("a", options_case_insensitive));
+        assert!(!pat_except2.matches_with("A", options_case_insensitive));
+        assert!(pat_except2.matches_with("A", options_case_sensitive));
     }
 
     #[test]

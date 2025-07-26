@@ -354,6 +354,12 @@ fn main() {
     assert_eq!(glob_vec("aa[!a]"), Vec::<PathBuf>::new());
     assert_eq!(glob_vec("aa[!abc]"), Vec::<PathBuf>::new());
 
+    assert_eq!(glob_vec("aa[^b]"), vec!(PathBuf::from("aaa")));
+    assert_eq!(glob_vec("aa[^bcd]"), vec!(PathBuf::from("aaa")));
+    assert_eq!(glob_vec("a[^bcd]a"), vec!(PathBuf::from("aaa")));
+    assert_eq!(glob_vec("aa[^a]"), Vec::<PathBuf>::new());
+    assert_eq!(glob_vec("aa[^abc]"), Vec::<PathBuf>::new());
+
     assert_eq!(
         glob_vec("bbb/specials/[[]"),
         vec!(PathBuf::from("bbb/specials/["))
