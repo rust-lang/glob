@@ -258,6 +258,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
             original: "".to_string(),
             tokens: Vec::new(),
             is_recursive: false,
+            is_regular: true,
         });
     }
 
@@ -551,6 +552,7 @@ pub struct Pattern {
     original: String,
     tokens: Vec<PatternToken>,
     is_recursive: bool,
+    is_regular: bool,
 }
 
 /// Show the original glob pattern.
@@ -604,15 +606,19 @@ impl Pattern {
         let chars = pattern.chars().collect::<Vec<_>>();
         let mut tokens = Vec::new();
         let mut is_recursive = false;
+        let mut is_regular = true;
         let mut i = 0;
 
         while i < chars.len() {
             match chars[i] {
                 '?' => {
+                    is_regular = false;
                     tokens.push(AnyChar);
                     i += 1;
                 }
                 '*' => {
+                    is_regular = false;
+
                     let old = i;
 
                     while i < chars.len() && chars[i] == '*' {
@@ -674,6 +680,8 @@ impl Pattern {
                     }
                 }
                 '[' => {
+                    is_regular = false;
+
                     if i + 4 <= chars.len() && chars[i + 1] == '!' {
                         match chars[i + 3..].iter().position(|x| *x == ']') {
                             None => (),
@@ -714,6 +722,7 @@ impl Pattern {
             tokens,
             original: pattern.to_string(),
             is_recursive,
+            is_regular,
         })
     }
 
@@ -877,19 +886,6 @@ fn fill_todo(
     path: &PathWrapper,
     options: MatchOptions,
 ) {
-    // convert a pattern that's just many Char(_) to a string
-    fn pattern_as_str(pattern: &Pattern) -> Option<String> {
-        let mut s = String::new();
-        for token in &pattern.tokens {
-            match *token {
-                Char(c) => s.push(c),
-                _ => return None,
-            }
-        }
-
-        Some(s)
-    }
-
     let add = |todo: &mut Vec<_>, next_path: PathWrapper| {
         if idx + 1 == patterns.len() {
             // We know it's good, so don't make the iterator match this path
@@ -904,8 +900,10 @@ fn fill_todo(
     let pattern = &patterns[idx];
     let is_dir = path.is_directory;
     let curdir = path.as_ref() == Path::new(".");
-    match pattern_as_str(pattern) {
-        Some(s) => {
+    match (pattern.is_regular, is_dir) {
+        (true, _) => {
+            let s = pattern.as_str();
+
             // This pattern component doesn't have any metacharacters, so we
             // don't need to read the current directory to know where to
             // continue. So instead of passing control back to the iterator,
@@ -926,7 +924,7 @@ fn fill_todo(
                 add(todo, next_path);
             }
         }
-        None if is_dir => {
+        (false, true) => {
             let dirs = fs::read_dir(path).and_then(|d| {
                 d.map(|e| {
                     e.map(|e| {
@@ -970,7 +968,7 @@ fn fill_todo(
                 }
             }
         }
-        None => {
+        _ => {
             // not a directory, nothing more to find
         }
     }
