@@ -913,7 +913,7 @@ fn fill_todo(
             let next_path = if curdir {
                 PathBuf::from(s)
             } else {
-                path.join(&s)
+                path.join(s)
             };
             let next_path = PathWrapper::from_path(next_path);
             if (special && is_dir)
