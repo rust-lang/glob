@@ -258,7 +258,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
             original: "".to_string(),
             tokens: Vec::new(),
             is_recursive: false,
-            is_regular: true,
+            has_metachars: false,
         });
     }
 
@@ -552,7 +552,9 @@ pub struct Pattern {
     original: String,
     tokens: Vec<PatternToken>,
     is_recursive: bool,
-    is_regular: bool,
+    /// A bool value that indicates whether the pattern contains any metacharacters.
+    /// We use this information for some fast path optimizations.
+    has_metachars: bool,
 }
 
 /// Show the original glob pattern.
@@ -606,18 +608,18 @@ impl Pattern {
         let chars = pattern.chars().collect::<Vec<_>>();
         let mut tokens = Vec::new();
         let mut is_recursive = false;
-        let mut is_regular = true;
+        let mut has_metachars = false;
         let mut i = 0;
 
         while i < chars.len() {
             match chars[i] {
                 '?' => {
-                    is_regular = false;
+                    has_metachars = true;
                     tokens.push(AnyChar);
                     i += 1;
                 }
                 '*' => {
-                    is_regular = false;
+                    has_metachars = true;
 
                     let old = i;
 
@@ -680,7 +682,7 @@ impl Pattern {
                     }
                 }
                 '[' => {
-                    is_regular = false;
+                    has_metachars = true;
 
                     if i + 4 <= chars.len() && chars[i + 1] == '!' {
                         match chars[i + 3..].iter().position(|x| *x == ']') {
@@ -722,7 +724,7 @@ impl Pattern {
             tokens,
             original: pattern.to_string(),
             is_recursive,
-            is_regular,
+            has_metachars,
         })
     }
 
@@ -900,8 +902,15 @@ fn fill_todo(
     let pattern = &patterns[idx];
     let is_dir = path.is_directory;
     let curdir = path.as_ref() == Path::new(".");
-    match (pattern.is_regular, is_dir) {
-        (true, _) => {
+    match (pattern.has_metachars, is_dir) {
+        (false, _) => {
+            debug_assert!(
+                pattern
+                    .tokens
+                    .iter()
+                    .all(|tok| matches!(tok, PatternToken::Char(_))),
+                "broken invariant: pattern has metachars but shouldn't"
+            );
             let s = pattern.as_str();
 
             // This pattern component doesn't have any metacharacters, so we
@@ -924,7 +933,7 @@ fn fill_todo(
                 add(todo, next_path);
             }
         }
-        (false, true) => {
+        (true, true) => {
             let dirs = fs::read_dir(path).and_then(|d| {
                 d.map(|e| {
                     e.map(|e| {
@@ -968,7 +977,7 @@ fn fill_todo(
                 }
             }
         }
-        _ => {
+        (true, false) => {
             // not a directory, nothing more to find
         }
     }
