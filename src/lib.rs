@@ -612,6 +612,32 @@ impl Pattern {
         let mut has_metachars = false;
         let mut i = 0;
 
+        if let (Some(first_char), second_char) = (chars.first(), chars.get(1)) {
+            #[cfg(not(windows))]
+            match (*first_char, second_char) {
+                ('~', None) | ('~', Some(&'/')) => {
+                    if let Ok(home_dir) = std::env::var("HOME") {
+                        for ch in home_dir.chars() {
+                            tokens.push(PatternToken::Char(ch));
+                        }
+                        i += 1;
+                    }
+                }
+                _ => {}
+            }
+            #[cfg(windows)]
+            match (*first_char, second_char) {
+                ('~', None) | ('~', Some(&'/')) | ('~', Some(&'\\')) => {
+                    if let Ok(home_dir) = std::env::var("USERPROFILE") {
+                        for ch in home_dir.chars() {
+                            tokens.push(PatternToken::Char(ch));
+                        }
+                        i += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
         while i < chars.len() {
             match chars[i] {
                 '?' => {
