@@ -73,6 +73,7 @@ doctest!("../README.md");
 use std::cmp;
 use std::cmp::Ordering;
 use std::error::Error;
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::fs::DirEntry;
@@ -200,13 +201,13 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
     }
 
     #[cfg(windows)]
-    fn to_scope(p: &Path) -> PathBuf {
+    fn to_scope(p: &Path) -> Box<Path> {
         // FIXME handle volume relative paths here
-        p.to_path_buf()
+        p.into()
     }
     #[cfg(not(windows))]
-    fn to_scope(p: &Path) -> PathBuf {
-        p.to_path_buf()
+    fn to_scope(p: &Path) -> Box<Path> {
+        p.into()
     }
 
     // make sure that the pattern is valid first, else early return with error
@@ -243,7 +244,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
         });
     }
 
-    let scope = root.map_or_else(|| PathBuf::from("."), to_scope);
+    let scope = root.map_or_else(|| Path::new(".").into(), to_scope);
     let scope = PathWrapper::from_path(scope);
 
     let mut dir_patterns = Vec::new();
@@ -329,12 +330,13 @@ impl fmt::Display for GlobError {
 
 #[derive(Debug)]
 struct PathWrapper {
-    path: PathBuf,
+    path: Box<Path>,
     is_directory: bool,
+    file_name: Option<Box<OsStr>>,
 }
 
 impl PathWrapper {
-    fn from_dir_entry(path: PathBuf, e: DirEntry) -> Self {
+    fn from_dir_entry(path: Box<Path>, file_name: Option<Box<OsStr>>, e: DirEntry) -> Self {
         let is_directory = e
             .file_type()
             .ok()
@@ -349,15 +351,24 @@ impl PathWrapper {
             })
             .or_else(|| fs::metadata(&path).map(|m| m.is_dir()).ok())
             .unwrap_or(false);
-        Self { path, is_directory }
+        Self {
+            path,
+            is_directory,
+            file_name,
+        }
     }
-    fn from_path(path: PathBuf) -> Self {
+    fn from_path(path: Box<Path>) -> Self {
         let is_directory = fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
-        Self { path, is_directory }
+        let file_name = path.file_name().map(Box::from);
+        Self {
+            path,
+            is_directory,
+            file_name,
+        }
     }
 
     fn into_path(self) -> PathBuf {
-        self.path
+        self.path.into_path_buf()
     }
 }
 
@@ -925,7 +936,7 @@ fn fill_todo(
             } else {
                 path.join(s)
             };
-            let next_path = PathWrapper::from_path(next_path);
+            let next_path = PathWrapper::from_path(next_path.into_boxed_path());
             if (special && is_dir)
                 || (!special
                     && (fs::metadata(&next_path).is_ok()
@@ -938,12 +949,16 @@ fn fill_todo(
             let dirs = fs::read_dir(path).and_then(|d| {
                 d.map(|e| {
                     e.map(|e| {
-                        let path = if curdir {
-                            PathBuf::from(e.path().file_name().unwrap())
+                        let (path, file_name) = if curdir {
+                            let path = e.path();
+                            let file_name = path.file_name().unwrap();
+                            (Box::from(file_name.as_ref()), Some(Box::from(file_name)))
                         } else {
-                            e.path()
+                            let path = e.path().into_boxed_path();
+                            let file_name = path.file_name().map(Box::from);
+                            (path, file_name)
                         };
-                        PathWrapper::from_dir_entry(path, e)
+                        PathWrapper::from_dir_entry(path, file_name, e)
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()
@@ -954,7 +969,7 @@ fn fill_todo(
                         children
                             .retain(|x| !x.file_name().unwrap().to_str().unwrap().starts_with('.'));
                     }
-                    children.sort_by(|p1, p2| p2.file_name().cmp(&p1.file_name()));
+                    children.sort_by(|p1, p2| p2.file_name.cmp(&p1.file_name));
                     todo.extend(children.into_iter().map(|x| Ok((x, idx))));
 
                     // Matching the special directory entries . and .. that
@@ -965,7 +980,10 @@ fn fill_todo(
                     if !pattern.tokens.is_empty() && pattern.tokens[0] == Char('.') {
                         for &special in &[".", ".."] {
                             if pattern.matches_with(special, options) {
-                                add(todo, PathWrapper::from_path(path.join(special)));
+                                add(
+                                    todo,
+                                    PathWrapper::from_path(path.join(special).into_boxed_path()),
+                                );
                             }
                         }
                     }
