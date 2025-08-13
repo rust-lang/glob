@@ -225,15 +225,9 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
             if let Some(user) = get_user_name() {
                 match pattern.strip_prefix("~").unwrap().strip_prefix(&user) {
                     Some(v) if v.starts_with("/") || v.is_empty() => {
-                        if let Some(mut v) = home_dir {
-                            v.push_str(
-                                pattern
-                                    .strip_prefix("~")
-                                    .unwrap()
-                                    .strip_prefix(&user)
-                                    .unwrap(),
-                            );
-                            new_pattern = v;
+                        if let Some(mut p) = home_dir {
+                            p.push_str(v);
+                            new_pattern = p;
                         }
                     }
                     _ => {}
