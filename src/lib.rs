@@ -1128,9 +1128,12 @@ impl MatchOptions {
     ///     case_sensitive: true,
     ///     require_literal_separator: false,
     ///     require_literal_leading_dot: false
+    ///     glob_tilde_expansion: false,
     /// }
     /// ```
-    ///
+    /// # Note
+    /// The behavior of this method doesn't match `default()`'s. This returns
+    /// `case_sensitive` as `true` while `default()` does it as `false`.
     pub fn new() -> Self {
         Self::default()
     }
