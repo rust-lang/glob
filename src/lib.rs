@@ -54,6 +54,10 @@
 //!     }
 //! }
 //! ```
+//!
+//! # `serde` Support
+//!
+//! The `Pattern` type implements `Serialize` and `Deserialize` from the `serde` crate when the `serde` feature is enabled. This allows `Pattern` instances to be easily serialized to and deserialized from various formats, such as JSON.
 
 #![doc(
     html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
@@ -570,6 +574,27 @@ impl FromStr for Pattern {
 
     fn from_str(s: &str) -> Result<Self, PatternError> {
         Self::new(s)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::ser::Serialize for Pattern {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        serializer.serialize_str(&self.original)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::de::Deserialize<'de> for Pattern {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::new(&s).map_err(serde::de::Error::custom)
     }
 }
 

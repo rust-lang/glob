@@ -12,7 +12,13 @@ Support for matching file paths against Unix shell style patterns.
 categories = ["filesystem"]
 rust-version = "1.63.0"
 
+[dependencies]
+serde = { version = "1.0", optional = true, default-features = false, features = ["std"] }
+
 [dev-dependencies]
 # FIXME: This should be replaced by `tempfile`
 tempdir = "0.3"
 doc-comment = "0.3"
+
+[features]
+serde = ["dep:serde"]

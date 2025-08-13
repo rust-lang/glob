@@ -36,3 +36,7 @@ for entry in glob("/media/**/*.jpg").expect("Failed to read glob pattern") {
     }
 }
 ```
+
+### `serde` Support
+
+The `Pattern` type implements `Serialize` and `Deserialize` from the `serde` crate when the `serde` feature is enabled. This allows `Pattern` instances to be easily serialized to and deserialized from various formats, such as JSON.
