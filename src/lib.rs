@@ -70,6 +70,8 @@ extern crate doc_comment;
 #[cfg(test)]
 doctest!("../README.md");
 
+mod utils;
+
 use std::cmp;
 use std::cmp::Ordering;
 use std::error::Error;
@@ -179,6 +181,7 @@ pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
 ///
 /// Paths are yielded in alphabetical order.
 pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternError> {
+    use utils::{get_home_dir, get_user_name};
     #[cfg(windows)]
     fn check_windows_verbatim(p: &Path) -> bool {
         match p.components().next() {
@@ -211,7 +214,34 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
 
     // make sure that the pattern is valid first, else early return with error
     let _ = Pattern::new(pattern)?;
-
+    let mut new_pattern = pattern.to_owned();
+    if options.glob_tilde_expansion {
+        let home_dir = get_home_dir();
+        if pattern == "~" || pattern.starts_with("~/") {
+            if let Some(home) = home_dir {
+                new_pattern = pattern.replacen("~", &home, 1);
+            }
+        } else if pattern.starts_with("~") {
+            if let Some(user) = get_user_name() {
+                match pattern.strip_prefix("~").unwrap().strip_prefix(&user) {
+                    Some(v) if v.starts_with("/") || v.is_empty() => {
+                        if let Some(mut v) = home_dir {
+                            v.push_str(
+                                pattern
+                                    .strip_prefix("~")
+                                    .unwrap()
+                                    .strip_prefix(&user)
+                                    .unwrap(),
+                            );
+                            new_pattern = v;
+                        }
+                    }
+                    _ => {}
+                };
+            }
+        }
+    }
+    let pattern = new_pattern.as_str();
     let mut components = Path::new(pattern).components().peekable();
     loop {
         match components.peek() {
@@ -1050,7 +1080,7 @@ fn chars_eq(a: char, b: char, case_sensitive: bool) -> bool {
 
 /// Configuration options to modify the behaviour of `Pattern::matches_with(..)`.
 #[allow(missing_copy_implementations)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MatchOptions {
     /// Whether or not patterns should be matched in a case-sensitive manner.
     /// This currently only considers upper/lower case relationships between
@@ -1069,6 +1099,21 @@ pub struct MatchOptions {
     /// conventionally considered hidden on Unix systems and it might be
     /// desirable to skip them when listing files.
     pub require_literal_leading_dot: bool,
+
+    /// Whether or not tilde expansion should be performed. if home directory
+    /// or user name cannot be determined, then no tilde expansion is performed.
+    pub glob_tilde_expansion: bool,
+}
+
+impl Default for MatchOptions {
+    fn default() -> Self {
+        Self {
+            case_sensitive: true,
+            require_literal_separator: false,
+            require_literal_leading_dot: false,
+            glob_tilde_expansion: false,
+        }
+    }
 }
 
 impl MatchOptions {
@@ -1086,16 +1131,13 @@ impl MatchOptions {
     /// }
     /// ```
     ///
-    /// # Note
-    /// The behavior of this method doesn't match `default()`'s. This returns
-    /// `case_sensitive` as `true` while `default()` does it as `false`.
-    // FIXME: Consider unity the behavior with `default()` in a next major release.
     pub fn new() -> Self {
-        Self {
-            case_sensitive: true,
-            require_literal_separator: false,
-            require_literal_leading_dot: false,
-        }
+        Self::default()
+    }
+    /// Enables or disables tilde (`~`) expansion in glob patterns
+    pub fn glob_tilde_expansion(mut self, v: bool) -> Self {
+        self.glob_tilde_expansion = v;
+        self
     }
 }
 
