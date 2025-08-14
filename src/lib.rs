@@ -161,7 +161,7 @@ pub struct Paths {
 /// }
 /// ```
 /// Paths are yielded in alphabetical order.
-pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
+pub fn glob(pattern: impl AsRef<str>) -> Result<Paths, PatternError> {
     glob_with(pattern, MatchOptions::new())
 }
 
@@ -178,7 +178,7 @@ pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
 /// passed to this function.
 ///
 /// Paths are yielded in alphabetical order.
-pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternError> {
+pub fn glob_with(pattern: impl AsRef<str>, options: MatchOptions) -> Result<Paths, PatternError> {
     #[cfg(windows)]
     fn check_windows_verbatim(p: &Path) -> bool {
         match p.components().next() {
@@ -208,6 +208,9 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
     fn to_scope(p: &Path) -> PathBuf {
         p.to_path_buf()
     }
+
+    // convert pattern into &str
+    let pattern = pattern.as_ref();
 
     // make sure that the pattern is valid first, else early return with error
     let _ = Pattern::new(pattern)?;
@@ -605,7 +608,8 @@ impl Pattern {
     /// This function compiles Unix shell style patterns.
     ///
     /// An invalid glob pattern will yield a `PatternError`.
-    pub fn new(pattern: &str) -> Result<Self, PatternError> {
+    pub fn new(pattern: impl AsRef<str>) -> Result<Self, PatternError> {
+        let pattern = pattern.as_ref();
         let chars = pattern.chars().collect::<Vec<_>>();
         let mut tokens = Vec::new();
         let mut is_recursive = false;
@@ -732,7 +736,8 @@ impl Pattern {
     /// Escape metacharacters within the given string by surrounding them in
     /// brackets. The resulting string will, when compiled into a `Pattern`,
     /// match the input string and nothing else.
-    pub fn escape(s: &str) -> String {
+    pub fn escape(s: impl AsRef<str>) -> String {
+        let s = s.as_ref();
         let mut escaped = String::new();
         for c in s.chars() {
             match c {
@@ -763,8 +768,8 @@ impl Pattern {
     /// assert!(Pattern::new("k[!e]tteh").unwrap().matches("kitteh"));
     /// assert!(Pattern::new("d*g").unwrap().matches("doog"));
     /// ```
-    pub fn matches(&self, str: &str) -> bool {
-        self.matches_with(str, MatchOptions::new())
+    pub fn matches(&self, str: impl AsRef<str>) -> bool {
+        self.matches_with(str.as_ref(), MatchOptions::new())
     }
 
     /// Return if the given `Path`, when converted to a `str`, matches this
@@ -776,8 +781,8 @@ impl Pattern {
 
     /// Return if the given `str` matches this `Pattern` using the specified
     /// match options.
-    pub fn matches_with(&self, str: &str, options: MatchOptions) -> bool {
-        self.matches_from(true, str.chars(), 0, options) == Match
+    pub fn matches_with(&self, str: impl AsRef<str>, options: MatchOptions) -> bool {
+        self.matches_from(true, str.as_ref().chars(), 0, options) == Match
     }
 
     /// Return if the given `Path`, when converted to a `str`, matches this
