@@ -1,5 +1,6 @@
 #[inline(always)]
 pub(crate) fn get_home_dir() -> Option<String> {
+	#[allow(deprecated)]
     std::env::home_dir().and_then(|v| v.to_str().map(String::from))
 }
 
