@@ -1131,11 +1131,6 @@ impl MatchOptions {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Enables or disables tilde (`~`) expansion in glob patterns
-    pub fn glob_tilde_expansion(mut self, v: bool) -> Self {
-        self.glob_tilde_expansion = v;
-        self
-    }
 }
 
 #[cfg(test)]
