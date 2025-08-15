@@ -215,23 +215,37 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
     // make sure that the pattern is valid first, else early return with error
     let _ = Pattern::new(pattern)?;
     let mut new_pattern = pattern.to_owned();
-    if options.glob_tilde_expansion {
-        let home_dir = get_home_dir();
-        if pattern == "~" || pattern.starts_with("~/") {
-            if let Some(home) = home_dir {
-                new_pattern = pattern.replacen("~", &home, 1);
+    if options.glob_tilde_expansion && pattern.starts_with("~") {
+        let mut home_dir = match get_home_dir() {
+            Some(v) => v,
+            None => {
+                return Err(PatternError {
+                    pos: 0,
+                    msg: "Failed to determine home directory.",
+                })
             }
-        } else if pattern.starts_with("~") {
+        };
+        if pattern == "~" || pattern.starts_with("~/") {
+            new_pattern = pattern.replacen("~", &home_dir, 1);
+        } else {
             if let Some(user) = get_user_name() {
                 match pattern.strip_prefix("~").unwrap().strip_prefix(&user) {
                     Some(v) if v.starts_with("/") || v.is_empty() => {
-                        if let Some(mut p) = home_dir {
-                            p.push_str(v);
-                            new_pattern = p;
-                        }
+                        home_dir.push_str(v);
+                        new_pattern = home_dir;
                     }
-                    _ => {}
+                    _ => {
+                        return Err(PatternError {
+                            pos: 1,
+                            msg: "'~' not followed by user name.",
+                        })
+                    }
                 };
+            } else {
+                return Err(PatternError {
+                    pos: 1,
+                    msg: "Failed to determine user name.",
+                });
             }
         }
     }
