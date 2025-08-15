@@ -237,7 +237,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
                     _ => {
                         return Err(PatternError {
                             pos: 1,
-                            msg: "'~' not followed by user name.",
+                            msg: "'~' not followed by '/' or user name.",
                         })
                     }
                 };
