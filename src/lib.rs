@@ -965,9 +965,7 @@ fn fill_todo(
             match dirs {
                 Ok(mut children) => {
                     if options.require_literal_leading_dot {
-                        children.retain(|x| {
-                            !x.0.file_name().unwrap().to_str().unwrap().starts_with('.')
-                        });
+                        children.retain(|x| !x.1.to_str().unwrap().starts_with('.'));
                     }
                     children.sort_by(|p1, p2| p2.1.cmp(&p1.1));
                     todo.extend(children.into_iter().map(|x| Ok((x.0, idx))));
