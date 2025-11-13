@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4](https://github.com/rust-lang/glob/compare/v0.3.3...v0.3.4) - 2025-11-13
+
+### Other
+
+- Cache filename for sorting in `fill_todo` ([#181](https://github.com/rust-lang/glob/pull/181))
+- Replace `into_error` method with `impl Into` ([#179](https://github.com/rust-lang/glob/pull/179))
+- Bump actions/checkout from 4 to 5 ([#178](https://github.com/rust-lang/glob/pull/178))
+- Replace tempdir with tempfile ([#176](https://github.com/rust-lang/glob/pull/176))
+
 ## [0.3.3](https://github.com/rust-lang/glob/compare/v0.3.2...v0.3.3) - 2025-08-11
 
 - Optimize memory allocations ([#147](https://github.com/rust-lang/glob/pull/147))
