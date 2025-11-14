@@ -1063,7 +1063,7 @@ fn chars_eq(a: char, b: char, case_sensitive: bool) -> bool {
 
 /// Configuration options to modify the behaviour of `Pattern::matches_with(..)`.
 #[allow(missing_copy_implementations)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MatchOptions {
     /// Whether or not patterns should be matched in a case-sensitive manner.
     /// This currently only considers upper/lower case relationships between
@@ -1099,16 +1099,18 @@ impl MatchOptions {
     /// }
     /// ```
     ///
-    /// # Note
-    /// The behavior of this method doesn't match `default()`'s. This returns
-    /// `case_sensitive` as `true` while `default()` does it as `false`.
-    // FIXME: Consider unity the behavior with `default()` in a next major release.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             case_sensitive: true,
             require_literal_separator: false,
             require_literal_leading_dot: false,
         }
+    }
+}
+
+impl Default for MatchOptions {
+    fn default() -> Self {
+        MatchOptions::new()
     }
 }
 
