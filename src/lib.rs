@@ -503,27 +503,51 @@ impl Iterator for Paths {
 /// A pattern parsing error.
 #[derive(Debug)]
 #[allow(missing_copy_implementations)]
+#[non_exhaustive]
 pub struct PatternError {
     /// The approximate character index of where the error occurred.
     pub pos: usize,
 
-    /// A message describing the error.
-    pub msg: &'static str,
+    /// Specific kind of pattern error.
+    pub kind: PatternErrorKind,
 }
 
-impl Error for PatternError {
-    fn description(&self) -> &str {
-        self.msg
-    }
-}
+impl Error for PatternError {}
 
 impl fmt::Display for PatternError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "Pattern syntax error near position {}: {}",
-            self.pos, self.msg
+            self.pos, self.kind
         )
+    }
+}
+
+/// Define kinds of Error that can happen during parsing Pattern
+#[derive(Debug, PartialEq, Clone)]
+#[non_exhaustive]
+pub enum PatternErrorKind {
+    /// Wildcard should be only `*` or `**`
+    InvalidWildcards,
+    /// Recursive wildcard should be in `**/` | `a/**/b` | `a/**` structure
+    InvalidRecursiveWildcards,
+    /// Range pattern should be enclosed by `[]`
+    InvalidRange,
+}
+
+impl fmt::Display for PatternErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let msg = match self {
+            PatternErrorKind::InvalidWildcards => {
+                "wildcards are either regular `*` or recursive `**`"
+            }
+            PatternErrorKind::InvalidRecursiveWildcards => {
+                "recursive wildcards must form a single path component"
+            }
+            PatternErrorKind::InvalidRange => "invalid range pattern",
+        };
+        write!(f, "{}", msg)
     }
 }
 
@@ -604,11 +628,6 @@ enum MatchResult {
     EntirePatternDoesntMatch,
 }
 
-const ERROR_WILDCARDS: &str = "wildcards are either regular `*` or recursive `**`";
-const ERROR_RECURSIVE_WILDCARDS: &str = "recursive wildcards must form a single path \
-                                         component";
-const ERROR_INVALID_RANGE: &str = "invalid range pattern";
-
 impl Pattern {
     /// This function compiles Unix shell style patterns.
     ///
@@ -642,7 +661,7 @@ impl Pattern {
                         Ordering::Greater => {
                             return Err(PatternError {
                                 pos: old + 2,
-                                msg: ERROR_WILDCARDS,
+                                kind: PatternErrorKind::InvalidWildcards,
                             })
                         }
                         Ordering::Equal => {
@@ -662,14 +681,14 @@ impl Pattern {
                                 } else {
                                     return Err(PatternError {
                                         pos: i,
-                                        msg: ERROR_RECURSIVE_WILDCARDS,
+                                        kind: PatternErrorKind::InvalidRecursiveWildcards,
                                     });
                                 }
                             // `**` begins with non-separator
                             } else {
                                 return Err(PatternError {
                                     pos: old - 1,
-                                    msg: ERROR_RECURSIVE_WILDCARDS,
+                                    kind: PatternErrorKind::InvalidRecursiveWildcards,
                                 });
                             };
 
@@ -719,7 +738,7 @@ impl Pattern {
                     // if we get here then this is not a valid range pattern
                     return Err(PatternError {
                         pos: i,
-                        msg: ERROR_INVALID_RANGE,
+                        kind: PatternErrorKind::InvalidRange,
                     });
                 }
                 c => {
