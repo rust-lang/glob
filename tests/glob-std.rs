@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-windows TempDir may cause IoError on windows: #10462
+// ignore-windows TempDir may cause IoError on Windows: #10462
 
 #![cfg_attr(test, deny(warnings))]
 
@@ -85,7 +85,7 @@ fn main() {
     // a broken symlink
     mk_symlink_file("aaa/setsuna", "aaa/kazusa");
 
-    // windows does not allow `*` or `?` characters to exist in filenames
+    // Windows does not allow `*` or `?` characters to exist in filenames
     if env::consts::FAMILY != "windows" {
         mk_file("bbb/specials/*", false);
         mk_file("bbb/specials/?", false);
