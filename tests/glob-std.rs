@@ -384,6 +384,31 @@ fn main() {
         vec!(PathBuf::from("i/qwe"), PathBuf::from("i/qwe/eee"))
     );
 
+    // `require_literal_leading_dot` only requires that the leading `.` appears
+    // literally in the pattern -- it must not stop such a pattern from matching.
+    // This mirrors what `Pattern::matches_with` does for the same options.
+    mk_file("j", true);
+    mk_file("j/.aaa", false);
+    mk_file("j/.abb", false);
+    mk_file("j/bbb", false);
+
+    assert_eq!(
+        glob_with_vec("j/.a*", options),
+        vec!(PathBuf::from("j/.aaa"), PathBuf::from("j/.abb"))
+    );
+    assert_eq!(
+        glob_with_vec("j/.?aa", options),
+        vec!(PathBuf::from("j/.aaa"))
+    );
+    assert_eq!(
+        glob_with_vec("j/.[ab]bb", options),
+        vec!(PathBuf::from("j/.abb"))
+    );
+    // ... while patterns that do not start with a literal `.` keep skipping
+    // those entries.
+    assert_eq!(glob_with_vec("j/*", options), vec!(PathBuf::from("j/bbb")));
+    assert_eq!(glob_with_vec("j/?aa", options), Vec::<PathBuf>::new());
+
     if env::consts::FAMILY != "windows" {
         assert_eq!(
             glob_vec("bbb/specials/[*]"),

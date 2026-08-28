@@ -905,6 +905,10 @@ fn fill_todo(
     };
 
     let pattern = &patterns[idx];
+    // Whether this component's pattern starts with a literal `.`, in which case
+    // it is allowed to match entries whose name starts with a `.` even when
+    // `require_literal_leading_dot` is set.
+    let has_literal_leading_dot = matches!(pattern.tokens.first(), Some(Char('.')));
     let is_dir = path.is_directory;
     let curdir = path.as_ref() == Path::new(".");
     match (pattern.has_metachars, is_dir) {
@@ -960,7 +964,15 @@ fn fill_todo(
             });
             match dirs {
                 Ok(mut children) => {
-                    if options.require_literal_leading_dot {
+                    // Entries whose name starts with a `.` are skipped here so
+                    // that a recursive `**` component, which matches directory
+                    // entries without ever consulting the pattern, does not
+                    // descend into them. Patterns that do start with a literal
+                    // `.` must not be filtered: `Pattern::matches_with` already
+                    // implements `require_literal_leading_dot` faithfully for
+                    // them, and dropping the entries here would make e.g.
+                    // `.git*` match nothing at all.
+                    if options.require_literal_leading_dot && !has_literal_leading_dot {
                         children.retain(|x| !x.1.to_str().unwrap().starts_with('.'));
                     }
                     children.sort_by(|p1, p2| p2.1.cmp(&p1.1));
@@ -971,7 +983,7 @@ fn fill_todo(
                     // requires that the pattern has a leading dot, even if the
                     // `MatchOptions` field `require_literal_leading_dot` is not
                     // set.
-                    if !pattern.tokens.is_empty() && pattern.tokens[0] == Char('.') {
+                    if has_literal_leading_dot {
                         for &special in &[".", ".."] {
                             if pattern.matches_with(special, options) {
                                 add(todo, PathWrapper::from_path(path.join(special)));
