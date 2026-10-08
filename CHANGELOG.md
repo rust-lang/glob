@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5](https://github.com/rust-lang/glob/compare/v0.3.4...v0.3.5) - 2026-10-08
+
+### Other
+
+- Switch to trusted publishing and rename default branch to main ([#192](https://github.com/rust-lang/glob/pull/192))
+
 ## [0.3.4](https://github.com/rust-lang/glob/compare/v0.3.3...v0.3.4) - 2026-07-21
 
 - Cache filename for sorting in `fill_todo` ([#181](https://github.com/rust-lang/glob/pull/181))
