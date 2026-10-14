@@ -66,7 +66,6 @@
 #[cfg(test)]
 doc_comment::doctest!("../README.md");
 
-use std::cmp;
 use std::cmp::Ordering;
 use std::error::Error;
 use std::ffi::OsString;
@@ -209,18 +208,20 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
     // make sure that the pattern is valid first, else early return with error
     let _ = Pattern::new(pattern)?;
 
-    let mut components = Path::new(pattern).components().peekable();
-    loop {
-        match components.peek() {
-            Some(&Component::Prefix(..)) | Some(&Component::RootDir) => {
-                components.next();
+    let mut root_len = 0;
+    for component in Path::new(pattern).components() {
+        match component {
+            Component::Prefix(prefix) => root_len += prefix.as_os_str().len(),
+            Component::RootDir => {
+                // UNC prefixes have an implicit root separator. Only count a
+                // separator if it is actually present in the original pattern.
+                if pattern[root_len..].starts_with(path::is_separator) {
+                    root_len += 1;
+                }
             }
             _ => break,
         }
     }
-    let rest = components.map(|s| s.as_os_str()).collect::<PathBuf>();
-    let normalized_pattern = Path::new(pattern).iter().collect::<PathBuf>();
-    let root_len = normalized_pattern.to_str().unwrap().len() - rest.to_str().unwrap().len();
     let root = if root_len > 0 {
         Some(Path::new(&pattern[..root_len]))
     } else {
@@ -244,8 +245,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
     let scope = PathWrapper::from_path(scope);
 
     let mut dir_patterns = Vec::new();
-    let components =
-        pattern[cmp::min(root_len, pattern.len())..].split_terminator(path::is_separator);
+    let components = pattern[root_len..].split_terminator(path::is_separator);
 
     for component in components {
         dir_patterns.push(Pattern::new(component)?);
@@ -1144,6 +1144,50 @@ mod test {
     fn test_glob_errors() {
         assert!(glob("a/**b").err().unwrap().pos == 4);
         assert!(glob("abc[def").err().unwrap().pos == 3);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_unc_root_patterns() {
+        // UNC prefixes have an implicit root separator, even when there is no
+        // separator after the share in the original pattern (issue #134).
+        for (pattern, root, remaining, require_dir) in [
+            (r"\\*.custom*\*", r"\\*.custom*\*", vec![""], false),
+            (r"\\*中文*\*", r"\\*中文*\*", vec![""], false),
+            (r"\\*\*", r"\\*\*", vec![""], false),
+            ("//*.custom*/*", "//*.custom*/*", vec![""], false),
+            (r"\\*.custom*\*\", r"\\*.custom*\*\", vec![""], true),
+            (r"\\*中文*\*\*.rs", r"\\*中文*\*\", vec!["*.rs"], false),
+            (
+                r"\\*\*\\中文\*.rs",
+                r"\\*\*\",
+                vec!["", "中文", "*.rs"],
+                false,
+            ),
+        ] {
+            let paths = glob(pattern).unwrap();
+            assert_eq!(paths.scope.unwrap().path, Path::new(root), "{pattern}");
+            assert_eq!(
+                paths
+                    .dir_patterns
+                    .iter()
+                    .map(Pattern::as_str)
+                    .collect::<Vec<_>>(),
+                remaining,
+                "{pattern}"
+            );
+            assert_eq!(paths.require_dir, require_dir, "{pattern}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_unsupported_verbatim_unc_patterns() {
+        for pattern in [r"\\?\UNC\*\*", r"\\?\UNC\*\*\*.rs"] {
+            let mut paths = glob(pattern).unwrap();
+            assert!(paths.scope.is_none());
+            assert!(paths.next().is_none());
+        }
     }
 
     // this test assumes that there is a /root directory and that

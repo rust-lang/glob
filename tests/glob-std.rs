@@ -470,4 +470,40 @@ fn main() {
             )
         );
     }
+
+    // Absolute patterns preserve Unicode components and redundant separators.
+    mk_file("中文", true);
+    mk_file("中文/一.rs", false);
+    let absolute_root = root.path().to_str().unwrap();
+    let expected = vec![root.path().join("中文/一.rs")];
+    for pattern in [
+        format!("{absolute_root}/中文/*.rs"),
+        format!("{absolute_root}//./中文//*.rs"),
+    ] {
+        assert_eq!(glob_vec(&pattern), expected);
+    }
+
+    #[cfg(windows)]
+    {
+        let forward_root = absolute_root.replace('\\', "/");
+        let repeated_root = format!("{}\\\\{}", &absolute_root[..2], &absolute_root[3..]);
+        let verbatim_root = root.path().canonicalize().unwrap();
+        for pattern in [
+            format!("{absolute_root}\\中文\\*.rs"),
+            format!("{forward_root}/中文/*.rs"),
+            format!("{repeated_root}\\中文\\*.rs"),
+        ] {
+            assert_eq!(glob_vec(&pattern), expected);
+        }
+        assert_eq!(
+            glob_vec(&format!("{}\\中文\\*.rs", verbatim_root.display())),
+            vec![verbatim_root.join("中文/一.rs")]
+        );
+        // A path rooted on the current drive, without a drive prefix.
+        let rooted = &absolute_root[2..];
+        assert_eq!(
+            glob_vec(&format!("{rooted}\\中文\\*.rs")),
+            vec![PathBuf::from(rooted).join("中文/一.rs")]
+        );
+    }
 }
