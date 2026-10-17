@@ -325,8 +325,37 @@ fn main() {
         )
     );
 
-    assert_eq!(glob_vec("./aaa"), vec!(PathBuf::from("aaa")));
-    assert_eq!(glob_vec("./*"), glob_vec("*"));
+    // Preserve an explicit current-directory prefix for literal, wildcard, and
+    // recursive patterns, without adding one to unprefixed patterns.
+    for pattern in &["aaa", "*", "xyz/?", "r/**/a.md"] {
+        let expected: Vec<_> = glob_vec(pattern)
+            .into_iter()
+            .map(|path| PathBuf::from(".").join(path).into_os_string())
+            .collect();
+        let actual: Vec<_> = glob_vec(&format!("./{}", pattern))
+            .into_iter()
+            .map(PathBuf::into_os_string)
+            .collect();
+        assert_eq!(actual, expected, "pattern: {}", pattern);
+    }
+    // A wildcard matching `.` should contribute exactly one dot component.
+    assert_eq!(
+        glob_vec(".*/aaa")
+            .into_iter()
+            .map(PathBuf::into_os_string)
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from(".").join("aaa").into_os_string()]
+    );
+    // Compare the raw spelling because Path equality normalizes interior dots.
+    assert_eq!(
+        glob_vec("././aaa").pop().unwrap().into_os_string(),
+        PathBuf::from(".").join(".").join("aaa").into_os_string()
+    );
+    #[cfg(windows)]
+    assert_eq!(
+        glob_vec(".\\aaa").pop().unwrap().into_os_string(),
+        PathBuf::from(".").join("aaa").into_os_string()
+    );
     assert_eq!(glob_vec("*/..").pop().unwrap(), PathBuf::from("xyz/.."));
     assert_eq!(glob_vec("aaa/../bbb"), vec!(PathBuf::from("aaa/../bbb")));
     assert_eq!(glob_vec("nonexistent/../bbb"), Vec::<PathBuf>::new());

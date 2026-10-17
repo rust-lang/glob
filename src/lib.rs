@@ -241,7 +241,8 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
     }
 
     let scope = root.map_or_else(|| PathBuf::from("."), to_scope);
-    let scope = PathWrapper::from_path(scope);
+    let mut scope = PathWrapper::from_path(scope);
+    scope.is_implicit_root = root.is_none();
 
     let mut dir_patterns = Vec::new();
     let components =
@@ -335,6 +336,9 @@ impl fmt::Display for GlobError {
 struct PathWrapper {
     path: PathBuf,
     is_directory: bool,
+    // Only the synthetic `.` used to start a relative pattern is omitted from
+    // results. Explicit dot components in the pattern must be preserved.
+    is_implicit_root: bool,
 }
 
 impl PathWrapper {
@@ -353,11 +357,19 @@ impl PathWrapper {
             })
             .or_else(|| fs::metadata(&path).map(|m| m.is_dir()).ok())
             .unwrap_or(false);
-        Self { path, is_directory }
+        Self {
+            path,
+            is_directory,
+            is_implicit_root: false,
+        }
     }
     fn from_path(path: PathBuf) -> Self {
         let is_directory = fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
-        Self { path, is_directory }
+        Self {
+            path,
+            is_directory,
+            is_implicit_root: false,
+        }
     }
 
     fn into_path(self) -> PathBuf {
@@ -906,7 +918,7 @@ fn fill_todo(
 
     let pattern = &patterns[idx];
     let is_dir = path.is_directory;
-    let curdir = path.as_ref() == Path::new(".");
+    let curdir = path.is_implicit_root;
     match (pattern.has_metachars, is_dir) {
         (false, _) => {
             debug_assert!(
@@ -974,7 +986,12 @@ fn fill_todo(
                     if !pattern.tokens.is_empty() && pattern.tokens[0] == Char('.') {
                         for &special in &[".", ".."] {
                             if pattern.matches_with(special, options) {
-                                add(todo, PathWrapper::from_path(path.join(special)));
+                                let next_path = if curdir {
+                                    PathBuf::from(special)
+                                } else {
+                                    path.join(special)
+                                };
+                                add(todo, PathWrapper::from_path(next_path));
                             }
                         }
                     }
