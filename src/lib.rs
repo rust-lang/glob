@@ -244,8 +244,30 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
     let scope = PathWrapper::from_path(scope);
 
     let mut dir_patterns = Vec::new();
-    let components =
-        pattern[cmp::min(root_len, pattern.len())..].split_terminator(path::is_separator);
+    let mut in_class = false;
+    let mut class_has_member = false;
+    let mut allow_negation = false;
+    let components = pattern[cmp::min(root_len, pattern.len())..].split_terminator(|c| {
+        if in_class {
+            // A leading ']' is a member, including after the optional '!'.
+            if c == ']' && class_has_member {
+                in_class = false;
+            } else if c == '!' && allow_negation {
+                allow_negation = false;
+            } else {
+                class_has_member = true;
+                allow_negation = false;
+            }
+            false
+        } else if c == '[' {
+            in_class = true;
+            class_has_member = false;
+            allow_negation = true;
+            false
+        } else {
+            path::is_separator(c)
+        }
+    });
 
     for component in components {
         dir_patterns.push(Pattern::new(component)?);
